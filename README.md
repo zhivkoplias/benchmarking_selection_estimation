@@ -67,5 +67,14 @@ the range of values in the precomputeTransition function (CLEAR.py) was increase
 while decreasing the transition step. It was done to ensure comparability with other tools
 that use the continuous space of selection coefficient estimates.
 
+
+## Data
+
+You are free to evaluate the performance on simulated data as well as experimental data.
+For experimental data two data types are supported:
+
+ - syncronysed (sync) file (<https://sourceforge.net/p/popoolation2/wiki/Tutorial/>)
+ - allele frequency matrix
+
 Good luck!
 
