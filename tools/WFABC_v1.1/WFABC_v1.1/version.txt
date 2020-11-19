@@ -1,0 +1,3 @@
+v1.1: 
+[FIXED] corrected a bug in wfabc_1 when sample sizes are different between loci. Ne estimates were wrong and should be recalculated. (Thanks to Charlie Waters) 
+[NEW] experimental feature to have 2 additional statistics Fsi and Fsd calculated separately when minor allele frequencies are lower than -F_threshold. Value is 0 by default, meaning this feature is disables.

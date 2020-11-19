@@ -1,0 +1,375 @@
+---
+title: 'Benchmarking on real data: sync file/matrix with allele frequencies'
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+require(bit64)
+require(poolSeq)
+require(Metrics)
+require(ggplot2)
+require(reshape2)
+require(reticulate)
+require(plyr)
+require(dplyr)
+require(slattice)
+require(Biobase)
+require(functional)
+require(hash)
+require(data.table)
+require(HistogramTools)
+require(ggridges)
+require(viridis)
+require(hrbrthemes)
+require(tidyr)
+require(plotly)
+require(adehabitatHR)
+require(corrplot)
+require(philentropy)
+require(sfsmisc)
+require(akima)
+```
+
+### Set working dirs and parameters
+
+```{r pressure, echo=FALSE}
+#path to sync data
+sync_file <- '/home/erik/sweden/master_thesis/stelkens/data/drosophila/example.txt'
+
+#alternatively, load your allele frequency matrix
+#af <- read.table("/home/erik/sweden/master_thesis/stelkens/data/drosophila/af_matrix.txt")
+#af_df <- as.data.frame(af)
+
+#set params
+#set the range of s estimates for WFABC
+#also makes sure that it corresponds to the number of transition probablities\\
+#in CLEAR, change CLEAR.py accordingly if needed
+min_s <- -0.1
+max_s <- 0.6
+#set number of cores
+cores <- 7
+#set Ne
+ne_estimates <- 300
+#set vector with generations
+vector_with_generations <- c(0,10,20,30,40,50,60)
+gen_time <- length(vector_with_generations)
+vector_with_replicas <- c(1)
+next_repl <- rep(vector_with_replicas,times=length(vector_with_generations))
+next_gen <- rep(vector_with_generations,each=length(vector_with_replicas))
+
+
+#adjust the location of source files for all tools
+wfabc_dir <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/"
+wfabc_mul_loci <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci.txt"
+wfabc_posterior_s <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci_posterior_s.txt"
+clear_dir <- "~/sweden/master_thesis/stelkens/tools/CLEAR"
+clear_sync_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.sync"
+clear_pop_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops"
+clear_output_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/output_variant_scores.csv"
+```
+
+### Pre-process sync data (skip if your data is alreqdy in a form of allele frequency matrix)
+
+```{r pressure, echo=FALSE}
+data_file <- read.table(sync_file, header=FALSE, sep = ' ')
+data_file$V2 <- as.numeric(data_file$V2)
+non_unique_loci <- data_file$V2[duplicated(data_file$V2)]
+right_chromosomes <- as.character(unique(data_file$V1))
+
+#subset data (if needed)
+
+#subset based on genomic coordinates
+#data_file <- subset(data_file, data_file$V2 > 11000000 & data_file$V2 < 12000000)
+
+#subset of random loci
+n_loci_subset <- 2000
+loci_to_pick <- sample(data_file$V2, n_loci_subset)
+data_file <- subset(data_file, data_file$V2 %in% loci_to_pick)
+
+if (length(data_file$V2) != length(unique(data_file$V2))){
+  data_file$V2 = data_file$V2 + sample(1:10000000000000, length(data_file[,1]))
+}
+
+all_loci <- data_file$V2
+
+write.table(data_file, file = "example.sync",
+            sep = "\t", row.names = F, col.names = F, quote = FALSE)
+
+#convert to trajectories
+sync_file_c <- read.sync(file='example.sync', next_gen, next_repl)
+af <- af.traj(sync_file_c, right_chromosomes, all_loci, vector_with_replicas)
+af <- na.omit(af)
+af_df <- as.data.frame(af)
+```
+
+### Filter for most significant loci (if needed)
+
+```{r}
+
+analyNullSimP<-function(p0=0.5,p1=0.5,t=1000,ne=ne_estimates,lower=TRUE){
+  ## input params: p0,pt,generation time, Ne
+  fst<-1-(1-1/(2*ne))^t
+  alpha<-p0 * (1-fst)/fst
+  beta<-(1-p0) * (1-fst)/fst
+  pv<-pbeta(p1,alpha+0.001,beta+0.001,lower.tail=lower)
+  pv
+}
+
+bnd<-log(0.95/0.05)
+p1 <- as.numeric(af_df[,1])
+p0 <- as.numeric(af_df[,ncol(af_df)])
+
+pv<-analyNullSimP(p0,p1,t=60,ne=300,lower=TRUE)
+sign_indices <-log(pv/(1-pv)) ## Outputs logit
+passed_alleles <- which(abs(sign_indices) > bnd) #vector with indices
+af_df_cleaned <- af_df[passed_alleles,]
+n_row <- length(af_df_cleaned[,1])
+
+#plot allele frequency trajectories
+lends <- c("round","butt","square")
+matplot(t(as.matrix((af_df_cleaned))), type = "l", xlab = 'generation', ylab = 'frequency',
+        cex.lab=1.7, cex.axis=0.001, cex.main=2, cex.sub=0.01, lty=1, lwd=1.2, lend=lends, tck=-.0001)
+axis(1, at=c(1:length(vector_with_generations)),labels=vector_with_generations,
+     col.axis="black", las=1.5, cex.axis=1.7, tck=-.03)
+axis(2, at=c(0,0.2,0.4,0.6,0.8,1),labels=c(0,0.2,0.4,0.6,0.8,1),
+     col.axis="black", las=1.5, cex.axis=1.7, tck=-.03)
+
+
+```
+
+### Functions for s estimation
+
+```{r pressure, echo=FALSE}
+
+#lls estimation
+lls_estimates <- by(af_df_cleaned, 1:nrow(af_df_cleaned), function(row) estimateSH(row, t=rev(vector_with_generations),
+                                                                                   Ne=ne_estimates, haploid = FALSE, h = 0.5))
+
+lls_estimates <- subListExtract(lls_estimates, "s", simplify = FALSE, keep.names = TRUE)
+lls_estimates <- unlist(lls_estimates, use.names=FALSE)
+lls_estimates <- round(lls_estimates, digits = 3)
+
+#hist(lls_estimates, breaks=50)
+
+#clear estimation
+clear_estimation_real_data <- function(allele_freqs_selected, stats, num_of_gen, gen_vector){
+  #create template
+  cat(paste0(gen_vector, c(rep(",1", num_of_gen))),file="~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops",sep="\t",append=FALSE)
+  
+  
+  allele_freqs_selected <- as.data.frame(allele_freqs_selected)
+  alleleFreqs_full <-vector()
+  alleleFreqs <- vector()
+  
+  for (row in 1:nrow(allele_freqs_selected)){
+    alleleFreqs_initial <- c(alleleFreqs, allele_freqs_selected[row,])
+    
+    alleleFreqs_middle <- vector()
+    alleleFreqs_complete <- vector()
+    for (i in alleleFreqs_initial){
+      alleleFreqs_middle <- c(alleleFreqs_middle, paste(as.integer(i*100),':',100-(i*100),
+                                                        ":0:0:0:0", sep = ""))
+    }
+    alleleFreqs_complete <- c('2L', sample(1:100000000, 1), 'T', alleleFreqs_middle)
+    alleleFreqs_full <- c(alleleFreqs_full, alleleFreqs_complete)
+  }
+  
+  dim(alleleFreqs_full) <- stats
+  alleleFreqs_t <- as.data.frame(t(alleleFreqs_full))
+  write.table(alleleFreqs_t, file = "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.sync",
+              sep = "\t", row.names = F, col.names = F, quote = FALSE)
+  fileConn<-file("~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops")
+  writeLines(c("0,1\t10,1\t20,1\t30,1\t40,1\t50,1\t60,1"), fileConn)
+  close(fileConn)
+  
+  setwd('~/sweden/master_thesis/stelkens/tools/CLEAR')
+  
+  use_condaenv(condaenv = 'py2', conda = 'auto', required = TRUE)
+  py_discover_config()
+  system('bash -c "python2 demo.py"')
+  s_distr_clear=read.table("~/sweden/master_thesis/stelkens/tools/CLEAR/output_variant_scores.csv", header=TRUE, sep = '\t')
+  return(s_distr_clear$s)
+}
+
+stats <- c(gen_time+3, n_row)
+clear_estimates <- clear_estimation_real_data(af_df_cleaned, stats, gen_time, vector_with_generations)
+#hist(clear_estimates, breaks=50)
+
+
+#wfabc estimation
+wfabc_estimation_real_data <- function(your_dataset, stats, gen_time, wfabc_stats){
+  #create template
+  setwd('~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/')
+  
+  fileConn<-file(wfabc_mul_loci)
+  writeLines(as.character(wfabc_stats), sep = " ", fileConn)
+  close(fileConn)
+  
+  your_dataset <- as.data.frame(your_dataset)
+  #your_dataset <- your_dataset[,2:5]
+  
+  num_of_loci <- nrow(your_dataset)
+  gen_available <- vector_with_generations/100
+  sample_size <- rep(1, times=length(vector_with_generations))
+
+  alleleFreqs <-vector()
+  for(replica in 1:num_of_loci){ #num of loci
+    alleleFreqs <- c(alleleFreqs, sample_size)
+    alleleFreqs <- c(alleleFreqs, as.matrix(your_dataset[replica,]))
+  }
+  
+  #save data in wfabc format
+  alleleFreqs <- c(gen_available, alleleFreqs)
+  dim(alleleFreqs) <- c(gen_time,(num_of_loci*2)+1) #num of loci*2
+  alleleFreqs_t <- as.data.frame(t(alleleFreqs))
+  alleleFreqs_t <- as.data.frame(ceiling(alleleFreqs_t*100))
+  alleleFreqs_t[,length(alleleFreqs_t[1,])] <- sub("$", ",", alleleFreqs_t[,length(alleleFreqs_t[1,])])
+
+  #save data
+  write.table(alleleFreqs_t, file = wfabc_mul_loci,
+              sep = ",", row.names = F, col.names = F, quote = FALSE, append = TRUE)
+    
+  #call wfabc
+  invisible({capture.output({
+
+  system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+
+    })})
+  
+  #return estimates
+  post_s=read.table(wfabc_posterior_s)
+  estimated_wfabc <- rowMeans(post_s)
+  return(estimated_wfabc)
+}
+
+#wfabc
+stats <- character(3)
+stats[1] <- n_row
+stats[2] <- gen_time
+stats[3] <- '\n'
+wfabc_estimates <- wfabc_estimation_real_data(af_df_cleaned, stats, gen_time, stats)
+#hist(wfabc_estimates, breaks=50)
+
+#slattice estimation
+
+slattice_estimation_real_data <- function(your_dataset, your_gen, your_ne, your_gen_time){
+  slattice_estimation <- function(your_row){
+    your_row <- as.matrix(your_row)
+    df_slattice <- data.frame(N = rep(0, times=your_gen[length(your_gen)]+1), N.A = rep(0, times=your_gen[length(your_gen)]+1))
+    df_slattice[seq(1, nrow(df_slattice), mean(diff(your_gen))), ] = data.frame(ne_estimates = rep(your_ne, times=your_gen_time), N.A = rep(your_ne, times=your_gen_time))
+    df_slattice[seq(1, nrow(df_slattice), mean(diff(your_gen))), ][2] = df_slattice[seq(1, nrow(df_slattice), mean(diff(your_gen))), ][2]*your_row
+    df_slattice$N.A <- as.integer(df_slattice$N.A)
+    estimate <- estimate.s(df_slattice, your_ne, method="Hard EM", verbose = FALSE)
+    print(your_row)
+    return(estimate)
+  }
+  your_dataset <- as.data.frame(your_dataset)
+  
+  slattice_estimates <- by(your_dataset, 1:nrow(your_dataset), function(row) slattice_estimation(row))
+  s_distr_slattice <- subListExtract(slattice_estimates, "s", simplify = FALSE, keep.names = TRUE)
+  s_distr_slattice <- unlist(s_distr_slattice, use.names=FALSE)   
+  
+  return(s_distr_slattice)
+}
+
+slattice_estimates <- slattice_estimation_real_data(af_df_cleaned, vector_with_generations, ne_estimates, gen_time)
+#hist(slattice_estimates, breaks=50)
+
+```
+
+### Plot probability density functions (pdf) for all estimates
+
+```{r}
+
+df <- data.frame(tool=c(rep("wfabc", times=length(wfabc_estimates)), 
+                        rep("lls", times=length(lls_estimates)),
+                        rep("clear", times=length(clear_estimates)),
+                        rep("slattice", times=length(slattice_estimates))),
+                 selection_coeff=c(wfabc_estimates, lls_estimates, clear_estimates, slattice_estimates))
+
+
+ggplot(df, aes(x = selection_coeff, y = tool, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.1, alpha = 0.5) +
+  scale_fill_viridis_c(name = "Temp. [F]", option = "C")+
+  coord_cartesian(xlim = c(-1,1))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 7))+theme_bw()+
+  labs(x = "selection coefficient", y = "", title = '')+geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.01)+
+  theme(legend.position="none",
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 22), axis.title.x = element_text(size = 22),
+        axis.text.y = element_text(size = 22), axis.title.y = element_text(size = 22),
+        plot.title = element_text(size = 22, color = "black"))
+
+```
+
+### Plot Pearson corr coeff and overlap coeff for pdfs
+
+```{r}
+par(mfrow=c(1,1))
+#calculate Pearson
+all_vectors <- data.frame(clear_estimates,lls_estimates,slattice_estimates,wfabc_estimates)
+distances <- cor(all_vectors, use = "complete.obs")
+distances <- round(distances, 3)
+
+colnames(distances) <- paste('', c("CLEAR", "LLS", "slattice", "WFABC"), sep=" ")
+rownames(distances) <- paste("", c("CLEAR", "LLS", "slattice", "WFABC"), sep=" ")
+
+corrplot(distances, type = "lower", order = "hclust", 
+         tl.col = "black", method = 'color', tl.srt = 45, bg = 'white', 
+         cl.cex = 1, cl.offset = 2.7, number.cex = 5,
+         number.font = 5, pch.cex = 50,
+         cl.ratio = 0.30, diag = FALSE, tl.cex = 1.4)
+
+
+#calculate overlaps
+calculate_overlap <- function(your_distr_1, your_distr_2){
+  a <- your_distr_1
+  b <- your_distr_2
+  
+  # define limits of a common grid, adding a buffer so that tails aren't cut off
+  lower <- min(c(a, b))
+  upper <- max(c(a, b))
+  
+  # generate kernel densities
+  da <- density(a, from=lower, to=upper)
+  db <- density(b, from=lower, to=upper)
+  d <- data.frame(x=da$x, a=da$y, b=db$y)
+  
+  # calculate intersection densities
+  d$w <- pmin(d$a, d$b)
+  
+  # integrate areas under curves
+  total <- integrate.xy(d$x, d$a) + integrate.xy(d$x, d$b)
+  intersection <- integrate.xy(d$x, d$w)
+  
+  # compute overlap coefficient
+  overlap <- 2 * intersection / total
+  return(overlap)
+}
+
+lls_estimates_cleared <- lls_estimates
+lls_estimates_cleared <- lls_estimates_cleared[!is.na(lls_estimates_cleared)]
+
+all_vectors <- list(clear_estimates,lls_estimates_cleared,slattice_estimates,wfabc_estimates)
+overlaps <- sapply(all_vectors, function(x) sapply(all_vectors, function(y) calculate_overlap(x,y)))
+colnames(overlaps) <- paste('', c("CLEAR", "LLS", "slattice", "WFABC"), sep=" ")
+rownames(overlaps) <- paste("", c("CLEAR", "LLS", "slattice", "WFABC"), sep=" ")
+
+corrplot(overlaps, type = "lower", order = "hclust", is.corr = FALSE,
+         tl.col = "black", method = 'color', tl.srt = 45,cl.lim=c(min(overlaps),max(overlaps)),
+         cl.cex = 1.5, cl.offset = 2.7, number.cex = 2.5, cl.length = 4,
+         number.font = 5, pch.cex = 50,
+         cl.ratio = 0.30, diag = FALSE, tl.cex = 1.7, 
+         addCoef.col = 'red')
+
+```
+

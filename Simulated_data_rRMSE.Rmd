@@ -1,0 +1,371 @@
+---
+title: "Benchmarking on simulated data: rRMSE"
+author: "Erik Zhivkoplias"
+date: "11/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+require(poolSeq)
+require(Metrics)
+require(ggplot2)
+require(reshape2)
+require(reticulate)
+require(plyr)
+require(dplyr)
+require(slattice)
+require(Biobase)
+require(functional)
+require(hash)
+require(data.table)
+require(HistogramTools)
+require(ggridges)
+require(viridis)
+require(hrbrthemes)
+require(tidyr)
+require(plotly)
+require(adehabitatHR)
+require(corrplot)
+require(philentropy)
+require(sfsmisc)
+require(akima)
+```
+
+### Set working dirs and parameters
+
+```{r pressure, echo=FALSE}
+#set initial allele freq
+p0_in_freq <- 0.05
+#set vector with true selection coefficients
+selection_vec <- seq(0.05,0.525, 0.025) #20 values
+#set Ne
+Ne <- 30
+#set vector with generations
+gen <- seq(0, 60, by=10)
+av_distance <- mean(diff(gen))
+n_time_points <- length(gen)
+#set number of loci
+n_loci <- 30
+#set number of bootstraps
+n_bootstraps <- 3
+#set dominance parameter
+dominance <- 0.5
+#set number of cores
+cores <- 7
+#set the range of s estimates for WFABC
+#also makes sure that it corresponds to the number of transition probablities\\
+#in CLEAR, change CLEAR.py accordingly if needed
+min_s <- -0.1
+max_s <- 0.6
+
+#adjust the location of source files of all tools
+wfabc_dir <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/"
+wfabc_mul_loci <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci.txt"
+wfabc_posterior_s <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci_posterior_s.txt"
+clear_dir <- "~/sweden/master_thesis/stelkens/tools/CLEAR"
+clear_sync_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.sync"
+clear_pop_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops"
+clear_output_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/output_variant_scores.csv"
+
+#set output dir
+dir_with_plots <- "~/sweden/master_thesis/stelkens/week2/plots_simulated/"
+setwd(dir_with_plots)
+
+#load data with rRMSE measurments (if already available)
+#all_data <- readRDS('plot_all_gen18_4tp.Rds')
+
+```
+
+## Functions for s estimation
+
+### LLS estimation
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+lls_estimation <- function(selection_coeff, p0_freq, Ne, num_of_loci, num_of_generations, num_of_replicas) {
+
+  rmse_result <- vector()
+
+  for(replica in 1:num_of_replicas){
+
+    predicted <- vector()
+    N <- Ne
+
+    #generate simulated data in the format that is required by LLS
+    for(r in 1:num_of_loci) {
+      alleleFreqs <- wf.traj(p0=rep(p0_freq, times=1), Ne=N, t=gen, s=selection_coeff, haploid = FALSE, h = dominance)
+      estimated <- estimateSH(alleleFreqs, t=gen, Ne=N, haploid = FALSE, h = 0.5)
+      estimated$s
+      predicted <- c(predicted, estimated$s)
+    }
+    predicted <- na.omit(predicted)
+    length_predicted = length(predicted)
+    
+    actual <- rep(selection_coeff, times=length_predicted)
+    rmse_result <- c(rmse_result, (rmse(actual, predicted[0:length_predicted]))/selection_coeff)
+  }
+  return(rmse_result)
+}
+
+#Calculate rMSE for a range of selection coefficients
+
+rmse_lls <- vector()
+
+#calculation
+for (rep in 1:n_bootstraps){
+  for(s in selection_vec){
+    rmse_lls <- c(rmse_lls, mean(lls_estimation(s, p0_in_freq, Ne, n_loci, gen[length(gen)], 1)))
+    #print(paste0("Done with following selection coefficient: ", s))
+  }
+  print(paste0("Done with following bootsrap iteration: ", rep))
+}
+
+dim(rmse_lls) <- c(length(selection_vec),n_bootstraps) #length of vector with coefficients and bootstraps
+rmse_lls <- as.data.frame(rmse_lls)
+rmse_lls_means <- apply(rmse_lls,1,mean)
+rmse_lls_sd <- apply(rmse_lls,1,sd)
+
+```
+
+### WFABC estimation
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+
+rmse_wfabc <- vector()
+setwd(wfabc_dir)
+
+wfabc_stats <- character(3)
+wfabc_stats[1] <- n_loci
+wfabc_stats[2] <- n_time_points
+wfabc_stats[3] <- '\n'
+
+
+for(rep in 1:n_bootstraps){
+  
+  for(s in selection_vec){
+  
+    #generate simulated data in the format that is required by WFABC
+    fileConn<-file(wfabc_mul_loci)
+    writeLines(as.character(wfabc_stats), sep = " ", fileConn)
+    close(fileConn)
+
+    alleleFreqs <-vector()
+    gen_available <- gen/100
+    sample_size <- rep(1, times=n_time_points)
+
+    for(replica in 1:n_loci){
+    alleleFreqs <- c(alleleFreqs, sample_size)
+    alleleFreqs <- c(alleleFreqs, (wf.traj(p0=rep(p0_in_freq, times=1), Ne=Ne, t=gen, s=s, haploid = FALSE, h = dominance)))
+  }
+
+    alleleFreqs <- c(gen_available, alleleFreqs)
+
+    dim(alleleFreqs) <- c(n_time_points,(n_loci*2)+1)
+    alleleFreqs_t <- as.data.frame(t(alleleFreqs))
+    alleleFreqs_t <- as.data.frame(ceiling(alleleFreqs_t*100))
+    alleleFreqs_t[,length(alleleFreqs_t[1,])] <- sub("$", ",", alleleFreqs_t[,length(alleleFreqs_t[1,])])
+
+    #save data
+    write.table(alleleFreqs_t, file = wfabc_mul_loci,
+              sep = ",", row.names = F, col.names = F, quote = FALSE, append = TRUE)
+    
+    #call wfabc
+    invisible({capture.output({
+
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", Ne, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+
+    })})
+  
+    #Calculate rMSE
+    post_s=read.table(wfabc_posterior_s)
+    estimated <- rowMeans(post_s)
+    actual <- rep(s, times=n_loci)
+    current_rmse <- (rmse(actual, estimated))/s
+    rmse_wfabc <- c(rmse_wfabc, current_rmse)
+    #print(paste0("Done with following selection coefficient: ", s))
+  }
+  print(paste0("Done with following bootsrap iteration: ", rep)) 
+}
+
+dim(rmse_wfabc) <- c(length(selection_vec),n_bootstraps) #length of vector with coefficients and bootstraps
+rmse_wfabc <- as.data.frame(rmse_wfabc)
+rmse_wfabc_means <- apply(rmse_wfabc,1,mean)
+rmse_wfabc_sd <- apply(rmse_wfabc,1,sd)
+
+```
+
+### CLEAR estimation
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+
+rmse_clear <- vector()
+setwd(clear_dir)
+
+for(rep in 1:n_bootstraps){
+  for(ss in selection_vec){
+  
+    #generate simulated data in the format that is required by CLEAR
+    alleleFreqs_full <-vector()
+    alleleFreqs <- vector()
+    for(replica in 1:n_loci){
+      alleleFreqs_initial <- c(alleleFreqs, (wf.traj(p0=rep(p0_in_freq, times=1), Ne=Ne,
+                                                   t=gen, s=ss, haploid = FALSE, h = dominance)))
+    
+      alleleFreqs_middle <- vector()
+      alleleFreqs_complete <- vector()
+      for (i in alleleFreqs_initial){
+        alleleFreqs_middle <- c(alleleFreqs_middle, paste(as.integer(i*100),':',100-(i*100),
+                                                        ":0:0:0:0", sep = ""))
+      }
+      alleleFreqs_complete <- c('2L', sample(1:100000000, 1), 'T', alleleFreqs_middle)
+      alleleFreqs_full <- c(alleleFreqs_full, alleleFreqs_complete)
+    }
+  
+    dim(alleleFreqs_full) <- c(n_time_points+3,n_loci)
+    alleleFreqs_t <- as.data.frame(t(alleleFreqs_full))
+  
+    #save data
+    write.table(alleleFreqs_t, file = clear_sync_file,
+              sep = "\t", row.names = F, col.names = F, quote = FALSE)
+  
+    fileConn<-file(clear_pop_file)
+    clear_string <- paste(gen, ',1\t', collapse = "", sep="")
+    clear_string <- substr(clear_string, 1, nchar(clear_string)-1)
+    writeLines(clear_string, fileConn)
+    close(fileConn)
+    use_condaenv(condaenv = 'py2', conda = 'auto', required = TRUE)
+    py_discover_config()
+    
+    #call CLEAR
+    invisible({capture.output({
+
+    system('bash -c "python2 demo.py"')
+    system(paste("rm", clear_pop_file))
+    system(paste("rm", clear_sync_file))
+
+    })})
+    
+    
+    #Calculate rMSE
+    post_s=read.table(clear_output_file, header=TRUE, sep = '\t')
+    actual <- rep(ss, times=n_loci)
+    current_rmse <- (rmse(actual, post_s$s))/ss
+    rmse_clear <- c(rmse_clear, current_rmse)
+    #print(paste0("Done with following selection coefficient: ", ss))
+  }
+  print(paste0("Done with following bootsrap iteration: ", rep))
+}
+
+#length of vector with coefficients and bootstraps
+dim(rmse_clear) <- c(length(selection_vec),n_bootstraps) 
+rmse_clear <- as.data.frame(rmse_clear)
+rmse_clear_means <- apply(rmse_clear,1,mean)
+rmse_clear_sd <- apply(rmse_clear,1,sd)
+
+```
+
+### slattice estimation
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+
+slattice_rmse_vec <- vector()
+
+for(rep in 1:n_bootstraps){
+  for(s in selection_vec){
+    slattice_estimates <-vector()
+    #generate simulated data in the format that is required by slattice
+    for(replica in 1:n_loci){
+      alleleFreqs = wf.traj(p0=rep(p0_in_freq, times=1), Ne=Ne, t=gen, s=s, haploid = FALSE, h = dominance)
+      df_slattice <- data.frame(N = rep(0, times=gen[length(gen)]+1), N.A = rep(0, times=gen[length(gen)]+1))
+      df_slattice[seq(1, nrow(df_slattice), mean(diff(gen))), ] = data.frame(N = rep(Ne, times=n_time_points), N.A = rep(Ne, times=n_time_points))
+      df_slattice[seq(1, nrow(df_slattice), mean(diff(gen))), ][2] = df_slattice[seq(1, nrow(df_slattice), mean(diff(gen))), ][2]*alleleFreqs
+      df_slattice$N.A <- as.integer(df_slattice$N.A)
+      
+      #call slattice
+      estimate <- estimate.s(df_slattice, Ne, method="Hard EM", max.iters=30, verbose=FALSE)
+      slattice_estimates <- c(slattice_estimates, estimate$s)
+      #print(paste0("Done with following replica: ", replica))
+    }
+    #print(slattice_estimates)
+    
+    #calculate rRMSE
+    slattice_actual <- rep(s, times=n_bootstraps)
+    slattice_rmse <- (rmse(slattice_estimates, slattice_actual))/s
+    slattice_rmse_vec <- c(slattice_rmse_vec, slattice_rmse)
+    #print(paste0("Done with following selection coefficient: ", s))
+  }
+  print(paste0("Done with following bootsrap iteration: ", rep))
+}
+
+dim(slattice_rmse_vec) <- c(length(selection_vec),n_bootstraps)
+slattice_rmse_vec <- as.data.frame(slattice_rmse_vec)
+slattice_rmse_vec_means <- apply(slattice_rmse_vec,1,mean)
+slattice_rmse_vec_sd <- apply(slattice_rmse_vec,1,sd)
+
+```
+
+### plot rRMSE metric for s vector
+
+```{r pressure, echo=FALSE}
+
+#merge all estimates into one dataset for plotting
+all_data_means <-  data.frame(
+    selection = selection_vec,
+    rmse_lls = rmse_lls_means,
+    rmse_clear = rmse_clear_means,
+    rmse_wfabc = rmse_wfabc_means,
+    rmse_slattice = slattice_rmse_vec_means
+  )
+
+all_data_sd <-  data.frame(
+  selection = selection_vec,
+  rmse_lls = rmse_lls_sd,
+  rmse_clear = rmse_clear_sd,
+  rmse_wfabc = rmse_wfabc_sd,
+  rmse_slattice = slattice_rmse_vec_sd
+)
+
+all_data_means <- melt(all_data_means,  id.vars = 'selection', variable.name = 'means')
+all_data_sd <- melt(all_data_sd,  id.vars = 'selection', variable.name = 'sd')
+all_data_means$dev <- all_data_sd$value
+all_data <- all_data_means
+
+setwd(dir_with_plots)
+
+#set the plot title
+plot_name = 'example'
+
+#plot
+ggplot(all_data, aes(selection,value, label=means)) + geom_line(aes(colour=means), size=1.5, alpha=0.5)+
+  geom_point(aes(colour=means))+
+  theme_bw()+
+  geom_errorbar(aes(ymin=value-dev, ymax=value+dev), colour="black", width=.002, position = position_dodge(0.01))+
+  theme(panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        legend.position="none",
+        axis.text.x = element_text(size = 18), axis.title.x = element_text(size = 22),
+        axis.text.y = element_text(size = 18), axis.title.y = element_text(size = 22),
+        plot.title = element_text(size = 22, color = "black"))+
+  labs(x = "s", y = "rRMSE", title = plot_name)+
+  theme(plot.title = element_text(hjust = 0.5))+    
+  geom_text(aes(x = 0.01, y = 0.9, label = "slattice", colour=means[61]), size=5) + 
+  geom_text(aes(x = 0.01, y = 0.7, label = "WFABC", colour=means[41]), size=5)+
+  geom_text(aes(x = 0.01, y = 0.5, label = "CLEAR", colour=means[21]), size=5)+
+  geom_text(aes(x = 0.01, y = 0.3, label = "LLS", colour=means[1]), size=5)+
+  scale_colour_manual(values=c('green', "blue", "#FF5733", 'magenta'))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 7))+
+  coord_fixed(ratio = 1)+
+  coord_cartesian(ylim = c(-0.01, 2.5), xlim = c(-0.01,0.55))
+
+#save data if needed for later analysis
+#ggsave("plot_all_h=0.png")
+#saveRDS(all_data, file = 'plot_all_h=0.Rds')
+print('DONE')
+
+```
