@@ -13,7 +13,7 @@ September 10, 2020
 
 This repo provides a set of scripts to ensure reproducibility of the results available here
 (<https://www.diva-portal.org/smash/get/diva2:1469953/FULLTEXT01.pdf>).
-In this study we aimed to compare the performance of different methods
+In this study, we aimed to compare the performance of different methods
 to estimate selection coefficient across parameter space.
 
 We compared the performance of four tools:
@@ -23,7 +23,7 @@ We compared the performance of four tools:
  - LLS (<https://github.com/ThomasTaus/poolSeq/>)
  - slattice (<https://github.com/mathii/slattice>)
  
-Other methods/tools could be added to the comparisson set later.
+Other methods/tools could be added to the comparison set later.
 
 
 ## Computational Setup
@@ -77,4 +77,5 @@ For experimental data two data types are supported:
  - allele frequency matrix
 
 Good luck!
+
 
