@@ -16,7 +16,7 @@ This repo provides a set of scripts to ensure reproducibility of the results ava
 In this study we aimed to compare the performance of different methods
 to estimate selection coefficient across parameter space.
 
-We to compared the performance of four tools:
+We compared the performance of four tools:
 
  - WFABC 1.1. (<http://jjensenlab.org/wp-content/uploads/2016/02/WFABC_v1.1.zip>)
  - CLEAR (<https://github.com/airanmehr/clear>)
