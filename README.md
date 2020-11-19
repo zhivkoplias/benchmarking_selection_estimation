@@ -58,14 +58,14 @@ install.packages(c("bit64","poolSeq", "Metrics", "ggplot2", "reshape2", "reticul
 
 ### Tools
 
-We also provide the relevant versions of WFABC 1.1. and CLEAR compared in present study.
+We also provide the relevant versions of WFABC 1.1. and CLEAR compared in the present study.
 Given that the first one is not currently present on github, it might be tricky to find
 a relevant version in future.
 
-As for CLEAR, the code has been slightly modified for the sake of our goals. In particular, the range
-of values in the precomputeTransition function (CLEAR.py) was increased, while decreasing the
-for transition step. It was done to ensure the comparability with other tools that use the
-continious space of selection coefficient estimates.
+As for CLEAR, the code has been slightly modified for the sake of our goals. In particular,
+the range of values in the precomputeTransition function (CLEAR.py) was increased,
+while decreasing the transition step. It was done to ensure comparability with other tools
+that use the continuous space of selection coefficient estimates.
 
 Good luck!
 
