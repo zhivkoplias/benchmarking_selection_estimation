@@ -1,5 +1,6 @@
 ---
 title: 'Benchmarking on real data: sync file/matrix with allele frequencies'
+date: "11/17/2020"
 output: html_document
 ---
 
@@ -51,8 +52,8 @@ sync_file <- '/home/erik/sweden/master_thesis/stelkens/data/drosophila/example.t
 #set the range of s estimates for WFABC
 #also makes sure that it corresponds to the number of transition probablities\\
 #in CLEAR, change CLEAR.py accordingly if needed
-min_s <- -0.1
-max_s <- 0.6
+min_s <- -0.8
+max_s <- 0.8
 #set number of cores
 cores <- 7
 #set Ne

@@ -1,0 +1,266 @@
+---
+title: 'Benchmarking on simulated data: s_vs_p0 heatmap'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+require(poolSeq)
+require(Metrics)
+require(ggplot2)
+require(reshape2)
+require(reticulate)
+require(plyr)
+require(dplyr)
+require(slattice)
+require(Biobase)
+require(functional)
+require(hash)
+require(data.table)
+require(HistogramTools)
+require(ggridges)
+require(viridis)
+require(hrbrthemes)
+require(tidyr)
+require(plotly)
+require(adehabitatHR)
+require(corrplot)
+require(philentropy)
+require(sfsmisc)
+require(akima)
+```
+
+### Set working dirs and parameters
+
+```{r pressure, echo=FALSE}
+#set params
+gen_vector <- seq(0, 60, by=10)
+time_point <- length(gen_vector)
+sel_vector <- seq(0.01, 0.95, by=0.025)
+p0_vector <- seq(0.01, 0.95, by=0.025)
+dominance_vec <- c(0,0.5,1)
+ne_estimates <- 300
+n_alleles <- 30
+n_bootstraps <- 3
+n_bootstraps_wfabc <- 3
+
+#adjust the location of WFABC source files
+wfabc_dir <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/"
+wfabc_mul_loci <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci.txt"
+wfabc_posterior_s <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci_posterior_s.txt"
+
+```
+
+### Calculate RMSE for LLS estimates given sel_vector and p0_vector values
+
+```{r pressure, echo=FALSE}
+
+
+plot_3d_for_lls <- function(h_param){
+  
+  df_p0freq_rmse <- data.frame(sel_coeff=as.Date(character()),
+                 p0_freq=character(), 
+                 mean_rRMSE=character(),
+                 stringsAsFactors=FALSE)
+
+  for (freq in p0_vector){
+    for (sel_coeff in sel_vector){
+      bootstraps_vec <- vector()
+      for (bootstrap in c(1:n_bootstraps)){
+        test_data_aft <- wf.traj(p0=rep(freq, times=n_alleles), Ne=ne_estimates, t=gen_vector, s=sel_coeff, haploid = FALSE, h = h_param)
+        lls_estimates <- by(test_data_aft, 1:nrow(test_data_aft), function(row) estimateSH(row, t=gen_vector,
+                                                                                         Ne=ne_estimates, haploid = FALSE, h = 0.5))
+        lls_estimates <- subListExtract(lls_estimates, "s", simplify = FALSE, keep.names = TRUE)
+        lls_estimates <- unlist(lls_estimates, use.names=FALSE)
+        lls_estimates <- round(lls_estimates, digits = 3)
+        predicted <- na.omit(lls_estimates)
+        length_predicted = length(predicted)
+        actual <- rep(sel_coeff, times=length_predicted)
+        rmse_result <- rmse(actual, predicted[0:length_predicted])/(sel_coeff)
+        bootstraps_vec <- c(bootstraps_vec, rmse_result)
+      }
+      df_p0freq_rmse <- rbind(df_p0freq_rmse, list(sel_coeff, freq, mean(bootstraps_vec)))
+    } 
+  }
+
+  colnames(df_p0freq_rmse) <- c('selection', 'p0_frequency', 'mean_rRMSE')
+  df_p0freq_rmse$mean_rRMSE[df_p0freq_rmse$mean_rRMSE > 1] <- 1
+  #df_p0freq_rmse$mean_rRMSE[is.nan(df_p0freq_rmse$mean_rRMSE)] <- 100
+
+  df_p0freq_rmse_plot <- pivot_wider(df_p0freq_rmse, names_from = p0_frequency, values_from = mean_rRMSE)
+  rownames(df_p0freq_rmse_plot) <- df_p0freq_rmse_plot$selection
+  matrix_to_plot_lls <- as.matrix(df_p0freq_rmse_plot[,-1])
+  return(matrix_to_plot_lls)
+}
+
+lls_h0 <- plot_3d_for_lls(dominance_vec[1])
+#lls_h05 <- plot_3d_for_lls(dominance_vec[2])
+#lls_h1 <- plot_3d_for_lls(dominance_vec[3])
+
+```
+
+### Plot heatmap for LLS
+
+```{r pressure, echo=FALSE}
+
+rRMSE_given_dominance = lls_h0
+#rRMSE_given_dominance = lls_h1
+#rRMSE_given_dominance = lls_h05
+
+
+x.axisSettings <- list(
+  title = "selection coefficient",
+  titlefont = list(size = 35),
+  tickfont = list(size = 30),
+  autotick = F, tickmode = "array", tickvals = c(0,0.2,0.4,0.6,0.8)
+)
+
+y.axisSettings <- list(
+  title = "initial frequency",
+  showticklabels = TRUE,
+  titlefont = list(size = 35),
+  tickfont = list(size = 30),
+  autotick = F, tickmode = "array", tickvals = c(0,0.2,0.4,0.6,0.8)
+)
+
+
+plot_ly(x = sel_vector, y = p0_vector, z = rRMSE_given_dominance, 
+        type = "heatmap", colors = 'Blues') %>%
+  layout(xaxis=x.axisSettings,
+         yaxis=y.axisSettings)
+
+#add to plot_ly to display legend
+#colorbar = list(title = "", thickness=20, x = 1.1, y = 0.9, len=1, nticks=6, ticklen =10, tickangle=90, tickfont = list(size=30)
+```
+
+### Calculate RMSE for WFABC estimates given sel_vector and p0_vector values
+
+```{r pressure, echo=FALSE}
+
+
+plot_3d_for_wfabc <- function(h_param){
+  wfabc_estimation_3d <- function(your_dataset, stats, gen_time, your_gen_vector){
+    #create template
+    setwd(wfabc_dir)
+    
+    fileConn<-file(wfabc_mul_loci)
+    writeLines(as.character(stats), sep = " ", fileConn)
+    close(fileConn)
+    
+    #handle data
+    num_of_loci <- nrow(your_dataset)
+    gen_available <- your_gen_vector/100
+    sample_size <- rep(1, times=gen_time)
+    
+    alleleFreqs <-vector()
+    for(replica in 1:num_of_loci){ #num of loci
+      alleleFreqs <- c(alleleFreqs, sample_size)
+      alleleFreqs <- c(alleleFreqs, as.matrix(your_dataset[replica,]))
+    }
+    
+    #save data in wfabc format
+    alleleFreqs <- c(gen_available, alleleFreqs)
+    dim(alleleFreqs) <- c(gen_time,(num_of_loci*2)+1)
+    alleleFreqs_t <- as.data.frame(t(alleleFreqs))
+    alleleFreqs_t <- as.data.frame(ceiling(alleleFreqs_t*100))
+    alleleFreqs_t[,length(alleleFreqs_t[1,])] <- sub("$", ",", alleleFreqs_t[,length(alleleFreqs_t[1,])])
+    
+    write.table(alleleFreqs_t, file = wfabc_mul_loci,
+                sep = ",", row.names = F, col.names = F, quote = FALSE, append = TRUE)
+    #call wfabc
+    invisible({capture.output({
+
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, wait=TRUE, timeout=20)
+
+    })})
+    post_s=read.table(wfabc_posterior_s)
+    estimated_wfabc <- rowMeans(post_s)
+    post_s[post_s > 0] <- NA
+    write.table(post_s, file = wfabc_posterior_s,
+                sep = ' ', eol = "\n")
+    return(estimated_wfabc)
+  }
+  
+  df_p0freq_rmse_wfabc0 <- data.frame(sel_coeff=as.Date(character()),
+                                      p0_freq=character(), 
+                                      mean_rRMSE=character(),
+                                      stringsAsFactors=FALSE)
+  
+  for (freq in p0_vector){
+    for (sel_coeff in sel_vector){
+      bootstraps_vec <- vector()
+      for (bootstrap in c(1:n_bootstraps_wfabc)){
+        test_data_aft <- wf.traj(p0=rep(freq, times=n_alleles), Ne=ne_estimates, t=gen_vector, s=sel_coeff, haploid = FALSE, h = h_param)
+        
+        stats <- character(3)
+        stats[1] <- length(test_data_aft[,1])
+        stats[2] <- time_point
+        stats[3] <- '\n'
+        predicted <- wfabc_estimation_3d(test_data_aft, stats, time_point, gen_vector)
+        
+        length_predicted = length(predicted)
+        actual <- rep(sel_coeff, times=length_predicted)
+        rmse_result <- rmse(actual, predicted[0:length_predicted])/(sel_coeff)
+        bootstraps_vec <- c(bootstraps_vec, rmse_result)
+        #print('done with another bootstrap')
+      }
+      df_p0freq_rmse_wfabc0 <- rbind(df_p0freq_rmse_wfabc0, list(sel_coeff, freq, mean(bootstraps_vec)))
+    } 
+  }
+  
+  colnames(df_p0freq_rmse_wfabc0) <- c('selection', 'p0_frequency', 'mean_rRMSE')
+  df_p0freq_rmse_wfabc0$mean_rRMSE[df_p0freq_rmse_wfabc0$mean_rRMSE > 1] <- 1
+  
+  df_p0freq_rmse_plot_wfabc <- pivot_wider(df_p0freq_rmse_wfabc0, names_from = p0_frequency, values_from = mean_rRMSE)
+  rownames(df_p0freq_rmse_plot_wfabc) <- df_p0freq_rmse_plot_wfabc$selection
+  matrix_to_plot_wfabc <- as.matrix(df_p0freq_rmse_plot_wfabc[,-1])
+  return(matrix_to_plot_wfabc)
+}
+
+wfabc_h0 <- plot_3d_for_wfabc(dominance_vec[1])
+#wfabc_h05 <- plot_3d_for_wfabc(dominance_vec[2])
+#wfabc_h1 <- plot_3d_for_wfabc(dominance_vec[3])
+```
+
+### Plot heatmap for WFABC
+
+```{r pressure, echo=FALSE}
+
+rRMSE_given_dominance = wfabc_h0
+#rRMSE_given_dominance = wfabc_h05
+#rRMSE_given_dominance = wfabc_h1
+
+
+x.axisSettings <- list(
+  title = "selection coefficient",
+  titlefont = list(size = 35),
+  tickfont = list(size = 30),
+  autotick = F, tickmode = "array", tickvals = c(0,0.2,0.4,0.6,0.8)
+)
+
+y.axisSettings <- list(
+  title = "initial frequency",
+  showticklabels = TRUE,
+  titlefont = list(size = 35),
+  tickfont = list(size = 30),
+  autotick = F, tickmode = "array", tickvals = c(0,0.2,0.4,0.6,0.8)
+)
+
+plot_ly(x = sel_vector, y = p0_vector, z = rRMSE_given_dominance, 
+        type = "heatmap", colors = 'Blues') %>%
+  layout(xaxis=x.axisSettings,
+         yaxis=y.axisSettings)
+
+#add to plot_ly to display legend
+#colorbar = list(title = "", thickness=20, x = 1.1, y = 0.9, len=1, nticks=6, ticklen =10, tickangle=90, tickfont = list(size=30)
+```

@@ -169,9 +169,7 @@ def precomputeCDandEmissions(data):
     return emissions,CDEidx
 
 
-#for simulated data = -0.1, 0.6
-#for alex data = -0.8, 0.8
-def precomputeTransitions(data,rangeS=np.arange(-0.5,0.50001,0.005),rangeH=[0.5],N=500):
+def precomputeTransitions(data,rangeS=np.arange(-0.8,0.80001,0.005),rangeH=[0.5],N=500):
     SS,HH=np.meshgrid(np.round(rangeS,3),np.round(rangeH,3))
     SH=zip(SS.reshape(-1), HH.reshape(-1))
     return pd.Series(map(lambda sh: precomputeTransition(data,sh,N),SH),index=pd.MultiIndex.from_tuples(SH,names=['s','h'])).xs(0.5,level='h')

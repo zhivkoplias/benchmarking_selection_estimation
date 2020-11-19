@@ -1,0 +1,420 @@
+---
+title: 'Benchmarking on simulated data: scenarios'
+author: "Erik Zhivkoplias"
+date: "11/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries //install packages if needed
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+require(poolSeq)
+require(Metrics)
+require(ggplot2)
+require(reshape2)
+require(reticulate)
+require(plyr)
+require(dplyr)
+require(slattice)
+require(Biobase)
+require(functional)
+require(hash)
+require(data.table)
+require(HistogramTools)
+require(ggridges)
+require(viridis)
+require(hrbrthemes)
+require(tidyr)
+require(plotly)
+require(adehabitatHR)
+require(corrplot)
+require(philentropy)
+require(sfsmisc)
+require(akima)
+```
+
+### Set working dirs and parameters
+
+```{r pressure, echo=FALSE}
+#set Ne
+ne_estimates <- 1000
+#set number of cores
+cores <- 7
+#set the range of s estimates for WFABC
+#also makes sure that it corresponds to the number of transition probablities\\
+#in CLEAR, change CLEAR.py accordingly if needed
+min_s <- -0.8
+max_s <- 0.8
+
+#adjust the location of source files of all tools
+wfabc_dir <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/"
+wfabc_mul_loci <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci.txt"
+wfabc_posterior_s <- "~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/multiple_loci_posterior_s.txt"
+clear_dir <- "~/sweden/master_thesis/stelkens/tools/CLEAR"
+clear_sync_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.sync"
+clear_pop_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops"
+clear_output_file <- "~/sweden/master_thesis/stelkens/tools/CLEAR/output_variant_scores.csv"
+
+#set output dir
+dir_with_plots <- "~/sweden/master_thesis/stelkens/week2/plots_simulated/"
+setwd(dir_with_plots)
+
+```
+
+## Generate data (choose one of the chunks below)
+
+### Disruptive scenario data generation
+
+```{r pressure, echo=FALSE}
+
+gen_vector <- c(0,100,200,300,400,500)
+n_alleles <- c(1:100)
+n_time_points <- length(gen_vector)
+av_distance <- mean(diff(gen_vector))
+
+dis_alleles_1 <- vector()
+dis_alleles_2 <- vector()
+for (i in n_alleles){
+  dis_alleles_1 <- rbind(dis_alleles_1, wf.traj(p0=rep(rnorm(1, mean=0.4, sd=0.05), times=1), Ne=ne_estimates, t=gen_vector, s=0.01, haploid = FALSE, h = 0.5))
+  dis_alleles_2 <- rbind(dis_alleles_2, wf.traj(p0=rep(rnorm(1, mean=0.4, sd=0.05), times=1), Ne=ne_estimates, t=gen_vector, s=-0.01, haploid = FALSE, h = 0.5))
+}
+dis_alleles_all <- rbind(dis_alleles_1, dis_alleles_2)
+n_loci <- length(n_alleles)*2
+dis_alleles_all_df <- as.data.frame(dis_alleles_all)
+
+```
+
+### Non-constant allele frequency change scenario data generation
+
+```{r pressure, echo=FALSE}
+gen_vector_1 <- c(0,100,200,300,400,500,600,700,800,900,1000)
+gen_vector_2 <- c(0,100,200,300,400,500,600,700,800)
+gen_vector_3 <- c(0,100,200,300,400,500,600)
+gen_vector_4 <- c(0,100,200,300,400)
+gen_vector_5 <- c(0,100,200)
+n_alleles <- c(1:50)
+n_loci <- length(n_alleles)*5
+n_time_points <- length(gen_vector_1)
+
+dis_alleles_1 <- vector()
+dis_alleles_2 <- vector()
+dis_alleles_3 <- vector()
+dis_alleles_4 <- vector()
+dis_alleles_5 <- vector()
+
+for (i in n_alleles){
+  dis_alleles_1 <- rbind(dis_alleles_1, wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector_1,
+                                                s=0.05, haploid = FALSE, h = 0.5))
+  dis_alleles_2 <- rbind(dis_alleles_2, c(rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector_2,
+                                                  s=0.05, haploid = FALSE, h = 0.5)))
+  dis_alleles_3 <- rbind(dis_alleles_3, c(rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector_3,
+                                                  s=0.05, haploid = FALSE, h = 0.5)))
+  dis_alleles_4 <- rbind(dis_alleles_4, c(rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector_4,
+                                                  s=0.05, haploid = FALSE, h = 0.5)))
+  dis_alleles_5 <- rbind(dis_alleles_5, c(rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          rep(rnorm(1, mean=0.05, sd=0.01), times=1), rep(rnorm(1, mean=0.05, sd=0.01), times=1),
+                                          wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector_5,
+                                                  s=0.05, haploid = FALSE, h = 0.5)))
+}
+
+dis_alleles_all <- rbind(dis_alleles_1, dis_alleles_2, dis_alleles_3, dis_alleles_4, dis_alleles_5)
+dis_alleles_all_df <- as.data.frame(dis_alleles_all)
+gen_vector <- gen_vector_1
+n_time_points <- length(gen_vector)
+av_distance <- mean(diff(gen_vector))
+
+```
+
+## Estimation for generated data
+
+```{r pressure, echo=FALSE, message=FALSE, results=FALSE}
+
+#replace extreme values to avoid numerical problems
+#dis_alleles_all[,] <- replace(dis_alleles_all[,], dis_alleles_all[,]==0, 0.02)
+#dis_alleles_all[,] <- replace(dis_alleles_all[,], dis_alleles_all[,]==1, 0.98)
+#dis_alleles_all_df <- as.data.frame(dis_alleles_all)
+
+#with lls
+lls_estimates <- by(dis_alleles_all, 1:nrow(dis_alleles_all), function(row) estimateSH(row, t=gen_vector,                                                                               Ne=ne_estimates, haploid = FALSE, h = 0.5))
+
+lls_estimates <- subListExtract(lls_estimates, "s", simplify = FALSE, keep.names = TRUE)
+lls_estimates <- unlist(lls_estimates, use.names=FALSE)
+lls_estimates <- round(lls_estimates, digits = 3)
+
+#with clear
+clear_estimation_real <- function(allele_freqs_selected){
+  allele_freqs_selected <- as.data.frame(allele_freqs_selected)
+  
+  #handle data
+  alleleFreqs_full <-vector()
+  alleleFreqs <- vector()
+  
+  for (row in 1:nrow(allele_freqs_selected)){
+    alleleFreqs_initial <- c(alleleFreqs, allele_freqs_selected[row,])
+    
+    alleleFreqs_middle <- vector()
+    alleleFreqs_complete <- vector()
+    for (i in alleleFreqs_initial){
+      alleleFreqs_middle <- c(alleleFreqs_middle, paste(as.numeric(i*100),':',100-(i*100),
+                                                        ":0:0:0:0", sep = ""))
+    }
+    alleleFreqs_complete <- c('2L', sample(1:1000000000, 1), 'T', alleleFreqs_middle)
+    alleleFreqs_full <- c(alleleFreqs_full, alleleFreqs_complete)
+  }
+  
+  gen_time1 <- length(gen_vector)
+  n_row1 <- length(allele_freqs_selected[,1])
+  stats_c <- c(gen_time1+3, n_row1)
+  
+  dim(alleleFreqs_full) <- stats_c
+  alleleFreqs_t <- as.data.frame(t(alleleFreqs_full))
+  write.table(alleleFreqs_t, file = clear_sync_file,
+              sep = "\t", row.names = F, col.names = F, quote = FALSE)
+  
+  clear_pop_file <- clear_pop_file
+  fileConn<-file(clear_pop_file)
+  clear_string <- paste(gen_vector, ',1\t', collapse = "", sep="")
+  clear_string <- substr(clear_string, 1, nchar(clear_string)-1)
+  writeLines(clear_string, fileConn)
+  close(fileConn)
+  
+  #run CLEAR
+  setwd(clear_dir)
+  use_condaenv(condaenv = 'py2', conda = 'auto', required = TRUE)
+  py_discover_config()
+  
+  invisible({capture.output({
+
+  system('bash -c "python2 demo.py"')
+  system(paste("rm", clear_pop_file))
+  system(paste("rm", clear_sync_file))
+
+  })})
+  
+  s_distr_clear=read.table(clear_output_file, header=TRUE, sep = '\t')
+  return(s_distr_clear)
+}
+
+clear_estimation <- clear_estimation_real(dis_alleles_all_df)
+
+#with wfabc
+wfabc_stats <- character(3)
+wfabc_stats[1] <- n_loci
+wfabc_stats[2] <- n_time_points
+wfabc_stats[3] <- '\n'
+
+wfabc_estimation_real <- function(your_dataset){
+  
+  #create template
+  setwd(wfabc_dir)
+  fileConn<-file(wfabc_mul_loci)
+  writeLines(as.character(wfabc_stats), sep = " ", fileConn)
+  close(fileConn)
+  
+  #handle data
+  your_dataset <- as.data.frame(your_dataset)
+  
+  num_of_loci <- nrow(your_dataset)
+  gen_available <- gen_vector/100
+  sample_size <- rep(1, times=length(gen_vector))
+  
+  alleleFreqs <-vector()
+  for(replica in 1:num_of_loci){
+    alleleFreqs <- c(alleleFreqs, sample_size)
+    alleleFreqs <- c(alleleFreqs, as.matrix(your_dataset[replica,]))
+  }
+  
+  #save data
+  alleleFreqs <- c(gen_available, alleleFreqs)
+  dim(alleleFreqs) <- c(length(gen_vector),(num_of_loci*2)+1)
+  alleleFreqs_t <- as.data.frame(t(alleleFreqs))
+  alleleFreqs_t <- as.data.frame(ceiling(alleleFreqs_t*100))
+
+  
+  alleleFreqs_t[,ncol(alleleFreqs_t)] <- sub("$", ",", alleleFreqs_t[,ncol(alleleFreqs_t)])
+  
+  write.table(alleleFreqs_t, file = wfabc_mul_loci,
+              sep = ",", row.names = F, col.names = F, quote = FALSE, append = TRUE)
+  
+  #call wfabc
+    invisible({capture.output({
+
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+
+    })})
+
+  post_s=read.table(wfabc_posterior_s)
+  estimated_wfabc <- rowMeans(post_s)
+  return(estimated_wfabc)
+}
+
+wfabc_estimates <- wfabc_estimation_real(dis_alleles_all)
+
+#with slattice
+slattice_estimation <- function(your_dataset, your_gen, your_ne, your_gen_time){
+  slattice_estimation <- function(your_row){
+    your_row <- as.matrix(your_row)
+    
+    #handle data
+    df_slattice <- data.frame(N = rep(0, times=your_gen[length(your_gen)]+1), N.A = rep(0, times=your_gen[length(your_gen)]+1))
+    df_slattice[seq(1, nrow(df_slattice), mean(diff(your_gen))), ] = data.frame(N = rep(your_ne, times=your_gen_time), N.A = rep(your_ne, times=your_gen_time))
+    df_slattice[seq(1, nrow(df_slattice), mean(diff(your_gen))), ][2] = df_slattice[seq(1, nrow(df_slattice), 100), ][2]*your_row
+    df_slattice$N.A <- as.integer(df_slattice$N.A)
+    
+    #run slattice
+    estimate <- estimate.s(df_slattice, your_ne, method="Hard EM", verbose = FALSE)
+    print(your_row)
+    return(estimate)
+  }
+  your_dataset <- as.data.frame(your_dataset)
+  slattice_estimates <- by(your_dataset, 1:nrow(your_dataset), function(row) slattice_estimation(row))
+  s_distr_slattice <- subListExtract(slattice_estimates, "s", simplify = FALSE, keep.names = TRUE)
+  s_distr_slattice <- unlist(s_distr_slattice, use.names=FALSE)   
+  
+  return(s_distr_slattice)
+}
+
+slattice_estimates <- slattice_estimation(dis_alleles_all, gen_vector, ne_estimates, length(gen_vector))
+
+
+```
+
+
+### Plot for disruptive selection scenario estimates
+
+```{r pressure, echo=FALSE}
+
+par(mfrow=c(4,1))
+h4 <- hist(wfabc_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h2 <- hist(lls_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h1 <- hist(clear_estimation$s, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h3 <- hist(slattice_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+
+
+df <- data.frame(tool=c(rep("wfabc", times=length(wfabc_estimates)), 
+                        rep("lls", times=length(lls_estimates)),
+                        rep("clear", times=length(clear_estimation$s)),
+                        rep("slattice", times=length(slattice_estimates))),
+                 selection_coeff=c(wfabc_estimates, lls_estimates, clear_estimation$s, slattice_estimates))
+
+#save data if needed for later analysis
+#saveRDS(df, file = 'estimates_for_evo_scenario.Rds')
+
+#plot pdfs
+ggplot(df, aes(x = selection_coeff, y = tool, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.1, alpha = 0.5) +
+  scale_fill_viridis_c(name = "Temp. [F]", option = "C")+
+  coord_cartesian(xlim = c(-0.09,0.09))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 7))+theme_bw()+
+  labs(x = "selection coefficient", y = "", title = '')+geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.01)+
+  theme(legend.position="none",
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 22), axis.title.x = element_text(size = 22),
+        axis.text.y = element_text(size = 22), axis.title.y = element_text(size = 22),
+        plot.title = element_text(size = 22, color = "black"))+geom_vline(xintercept=0.01, color = "steelblue", linetype = "dashed", size=1)+geom_vline(xintercept=-0.01, color = "steelblue", linetype = "dashed", size=1)
+
+
+#plot p0 and pt
+
+df_alleles_p0 <- as.data.frame(dis_alleles_all[,1])
+df_alleles_pt <- as.data.frame(dis_alleles_all[,ncol(dis_alleles_all)])
+colnames(df_alleles_p0) <- 'x'
+colnames(df_alleles_pt) <- 'x'
+
+ggplot() + 
+  geom_density(data = df_alleles_p0, aes(x = x), 
+               fill = "#E69F00", color = "black", alpha = 0.7) +
+  geom_density(data = df_alleles_pt, aes(x = x),
+               fill = "#56B4E9", color = "black", alpha = 0.7)+
+  theme_classic()+labs(x = "allele frequency", y = "", title = '')+
+  theme(panel.border = element_blank(), #panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line.x = element_line(colour = "black"),
+        axis.line.y = element_blank(),
+        legend.position="none",
+        axis.text.x = element_text(size = 18), axis.title.x = element_text(size = 22),
+        axis.text.y = element_text(size = 0.0001), axis.title.y = element_text(size = 0.0001),
+        plot.title = element_text(size = 22, color = "black"))+
+  theme(plot.title = element_text(hjust = 0.5))+    
+  geom_text(aes(x = 0.3, y = 6, label = "p0", colour='56B4E9'), size=10) + 
+  geom_text(aes(x = 0.1, y = 2, label = "pt", colour='E69F00'), size=10)
+
+```
+
+# Plot for non-constant allele frequency change scenario estimates
+
+```{r}
+
+par(mfrow=c(4,1))
+h4 <- hist(wfabc_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h2 <- hist(lls_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h1 <- hist(clear_estimation$s, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+h3 <- hist(slattice_estimates, density = 100, freq = TRUE, xlim = c(-0.5, 0.5), breaks = 100)
+
+
+df <- data.frame(tool=c(rep("wfabc", times=length(wfabc_estimates)), 
+                        rep("lls", times=length(lls_estimates)),
+                        rep("clear", times=length(clear_estimation$s)),
+                        rep("slattice", times=length(slattice_estimates))),
+                 selection_coeff=c(wfabc_estimates, lls_estimates, clear_estimation$s, slattice_estimates))
+
+#save data if needed for later analysis
+#saveRDS(df, file = 'estimates_for_evo_scenario.Rds')
+
+#plot pdfs
+ggplot(df, aes(x = selection_coeff, y = tool, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.1, alpha = 0.5) +
+  scale_fill_viridis_c(name = "Temp. [F]", option = "C")+
+  coord_cartesian(xlim = c(-0.15,0.15))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 7))+theme_bw()+
+  labs(x = "selection coefficient", y = "", title = '')+geom_density_ridges_gradient(scale = 1.5, rel_min_height = 0.01)+
+  theme(legend.position="none",
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 22), axis.title.x = element_text(size = 22),
+        axis.text.y = element_text(size = 22), axis.title.y = element_text(size = 22),
+        plot.title = element_text(size = 22, color = "black"))+geom_vline(xintercept=0.05, color = "steelblue", linetype = "dashed", size=1)
+
+
+#plot expected allele frequency trajectories vs observed
+n_alleles <- c(1:250)
+
+dis_alleles_exp <- vector()
+
+for (i in n_alleles){
+  dis_alleles_exp <- rbind(dis_alleles_exp, wf.traj(p0=rep(rnorm(1, mean=0.05, sd=0.01), times=1), Ne=ne_estimates, t=gen_vector,
+                                                s=0.01, haploid = FALSE, h = 0.5))
+}
+dis_alleles_exp <- as.data.frame(dis_alleles_exp)
+
+lends <- c("round","butt","square")
+
+par(mfrow=c(1,1))
+matplot(t(as.matrix((dis_alleles_exp[,]))), type = "l", xlab = 'generation', ylab = 'frequency',
+        cex.lab=1.7, cex.axis=0.001, cex.main=2, cex.sub=0.01, lty=1, lwd=1.2, lend=lends, tck=-.0001, col = 'black')
+par(new=TRUE)
+matplot(t(as.matrix((dis_alleles_all_df[,]))), type = "l", xlab = 'generation', ylab = 'frequency',
+        cex.lab=1.7, cex.axis=0.001, cex.main=2, cex.sub=0.01, lty=1, lwd=1.2, lend=lends, tck=-.0001, col = 'red')
+axis(1, at=c(1,2,3,4,5,6,7,8,9,10,11),labels=c(1,100,200,300,400,500,600,700,800,900,1000),
+     col.axis="black", las=1.5, cex.axis=1.7, tck=-.03)
+axis(2, at=c(0,0.2,0.4,0.6,0.8,1),labels=c(0,0.2,0.4,0.6,0.8,1),
+     col.axis="black", las=1.5, cex.axis=1.7, tck=-.03)
+
+
+```
+
