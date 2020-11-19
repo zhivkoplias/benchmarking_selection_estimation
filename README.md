@@ -47,7 +47,7 @@ before starting the R session.
 
 ### R packages
 
-Make sure to clone github repos and install LLS and slattice R packages according to instroctions provided.
+Make sure to clone github repos and install LLS and slattice R packages according to instructions provided.
 After that, start an R session and install the following packages:
 
 ``` r
