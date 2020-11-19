@@ -156,14 +156,15 @@ lls_estimates <- by(af_df_cleaned, 1:nrow(af_df_cleaned), function(row) estimate
 lls_estimates <- subListExtract(lls_estimates, "s", simplify = FALSE, keep.names = TRUE)
 lls_estimates <- unlist(lls_estimates, use.names=FALSE)
 lls_estimates <- round(lls_estimates, digits = 3)
-
 #hist(lls_estimates, breaks=50)
 
+
 #clear estimation
+setwd(clear_dir)
 clear_estimation_real_data <- function(allele_freqs_selected, stats, num_of_gen, gen_vector){
-  #create template
-  cat(paste0(gen_vector, c(rep(",1", num_of_gen))),file="~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops",sep="\t",append=FALSE)
   
+  #create template
+  cat(paste0(gen_vector, c(rep(",1", num_of_gen))),file=clear_pop_file,sep="\t",append=FALSE)
   
   allele_freqs_selected <- as.data.frame(allele_freqs_selected)
   alleleFreqs_full <-vector()
@@ -184,18 +185,27 @@ clear_estimation_real_data <- function(allele_freqs_selected, stats, num_of_gen,
   
   dim(alleleFreqs_full) <- stats
   alleleFreqs_t <- as.data.frame(t(alleleFreqs_full))
-  write.table(alleleFreqs_t, file = "~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.sync",
+  
+  #save data
+  write.table(alleleFreqs_t, file = clear_sync_file,
               sep = "\t", row.names = F, col.names = F, quote = FALSE)
-  fileConn<-file("~/sweden/master_thesis/stelkens/tools/CLEAR/sample_data/popoolation2/F37.pops")
-  writeLines(c("0,1\t10,1\t20,1\t30,1\t40,1\t50,1\t60,1"), fileConn)
+  
+  fileConn<-file(clear_pop_file)
+  clear_string <- paste(gen, ',1\t', collapse = "", sep="")
+  clear_string <- substr(clear_string, 1, nchar(clear_string)-1)
+  writeLines(clear_string, fileConn)
   close(fileConn)
   
-  setwd('~/sweden/master_thesis/stelkens/tools/CLEAR')
-  
+  #activate py2 env
   use_condaenv(condaenv = 'py2', conda = 'auto', required = TRUE)
   py_discover_config()
-  system('bash -c "python2 demo.py"')
-  s_distr_clear=read.table("~/sweden/master_thesis/stelkens/tools/CLEAR/output_variant_scores.csv", header=TRUE, sep = '\t')
+  
+  #call clear
+  system('bash -c "python2 demo.py" &>/dev/null')
+  system(paste("rm", clear_pop_file))
+  system(paste("rm", clear_sync_file))
+    
+  s_distr_clear=read.table(clear_output_file, header=TRUE, sep = '\t')
   return(s_distr_clear$s)
 }
 
@@ -207,14 +217,13 @@ clear_estimates <- clear_estimation_real_data(af_df_cleaned, stats, gen_time, ve
 #wfabc estimation
 wfabc_estimation_real_data <- function(your_dataset, stats, gen_time, wfabc_stats){
   #create template
-  setwd('~/sweden/master_thesis/stelkens/tools/WFABC_v1.1/WFABC_v1.1/sources/')
+  setwd(wfabc_dir)
   
   fileConn<-file(wfabc_mul_loci)
   writeLines(as.character(wfabc_stats), sep = " ", fileConn)
   close(fileConn)
   
   your_dataset <- as.data.frame(your_dataset)
-  #your_dataset <- your_dataset[,2:5]
   
   num_of_loci <- nrow(your_dataset)
   gen_available <- vector_with_generations/100
@@ -240,7 +249,7 @@ wfabc_estimation_real_data <- function(your_dataset, stats, gen_time, wfabc_stat
   #call wfabc
   invisible({capture.output({
 
-  system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+  system(paste("bash -c ./wfabc_1 multiple_loci.txt &>/dev/null; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt &>/dev/null ; rm multiple_loci.txt &>/dev/null"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE)
 
     })})
   

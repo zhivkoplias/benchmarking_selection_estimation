@@ -177,7 +177,7 @@ for(rep in 1:n_bootstraps){
     #call wfabc
     invisible({capture.output({
 
-    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", Ne, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt &>/dev/null; ./wfabc_2 -fixed_N", Ne, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt &>/dev/null ; rm multiple_loci.txt &>/dev/null"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE)
 
     })})
   
@@ -244,7 +244,7 @@ for(rep in 1:n_bootstraps){
     #call CLEAR
     invisible({capture.output({
 
-    system('bash -c "python2 demo.py"')
+    system('bash -c "python2 demo.py &>/dev/null"')
     system(paste("rm", clear_pop_file))
     system(paste("rm", clear_sync_file))
 

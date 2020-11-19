@@ -1,7 +1,9 @@
 ---
 title: 'Benchmarking on simulated data: s_vs_p0 heatmap'
+date: "11/17/2020"
 output: html_document
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -95,7 +97,6 @@ plot_3d_for_lls <- function(h_param){
 
   colnames(df_p0freq_rmse) <- c('selection', 'p0_frequency', 'mean_rRMSE')
   df_p0freq_rmse$mean_rRMSE[df_p0freq_rmse$mean_rRMSE > 1] <- 1
-  #df_p0freq_rmse$mean_rRMSE[is.nan(df_p0freq_rmse$mean_rRMSE)] <- 100
 
   df_p0freq_rmse_plot <- pivot_wider(df_p0freq_rmse, names_from = p0_frequency, values_from = mean_rRMSE)
   rownames(df_p0freq_rmse_plot) <- df_p0freq_rmse_plot$selection
@@ -180,7 +181,7 @@ plot_3d_for_wfabc <- function(h_param){
     #call wfabc
     invisible({capture.output({
 
-    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, wait=TRUE, timeout=20)
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt &>/dev/null; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt &>/dev/null ; rm multiple_loci.txt &>/dev/null"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, wait=TRUE, timeout=20)
 
     })})
     post_s=read.table(wfabc_posterior_s)

@@ -197,7 +197,7 @@ clear_estimation_real <- function(allele_freqs_selected){
   
   invisible({capture.output({
 
-  system('bash -c "python2 demo.py"')
+  system('bash -c "python2 demo.py" &>/dev/null')
   system(paste("rm", clear_pop_file))
   system(paste("rm", clear_sync_file))
 
@@ -251,7 +251,7 @@ wfabc_estimation_real <- function(your_dataset){
   #call wfabc
     invisible({capture.output({
 
-    system(paste("bash -c ./wfabc_1 multiple_loci.txt; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt ; rm multiple_loci.txt"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE, invisible=TRUE)
+    system(paste("bash -c ./wfabc_1 multiple_loci.txt &>/dev/null; ./wfabc_2 -fixed_N", ne_estimates, "-nthreads", cores, "-min_s", min_s, "-max_s", max_s, "multiple_loci.txt &>/dev/null ; rm multiple_loci.txt &>/dev/null"), ignore.stdout = TRUE, ignore.stderr = TRUE, intern=TRUE)
 
     })})
 
@@ -287,7 +287,6 @@ slattice_estimation <- function(your_dataset, your_gen, your_ne, your_gen_time){
 }
 
 slattice_estimates <- slattice_estimation(dis_alleles_all, gen_vector, ne_estimates, length(gen_vector))
-
 
 ```
 
